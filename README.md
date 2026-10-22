@@ -114,15 +114,17 @@ declared in a `.env` file, excluded from Git, and passed to containers with
 `/proc/self/environ`, `docker inspect` displays them in clear text, and a
 careless error message can print them to the logs.
 
-Docker secrets are files mounted into the container at `/run/secrets/<name>`,
-backed by a tmpfs in memory. They never appear in `docker inspect`, are not
-inherited by child processes, and can be rotated without rebuilding an image.
+Docker secrets are files mounted into the container at `/run/secrets/<name>`.
+They never appear in `docker inspect`, they are not inherited by child
+processes, and each service only gets the secrets it asks for. With Docker
+Swarm they live in an in-memory tmpfs; with plain Compose, as here, they are a
+read-only bind mount of the file on the host.
 
-This project uses environment variables, as allowed by the subject, with a
-`.env` file kept out of version control and a `.env.example` committed to
-document the expected keys. In a real deployment, database and administrator
-passwords would be better handled as secrets, the entrypoints reading them from
-their mounted file instead of the environment.
+This project uses both. Non-sensitive settings (user names, database name,
+domain) stay in `.env`. All passwords are Compose secrets stored in `secrets/`:
+the entrypoints read them from `/run/secrets/` at startup, and the MariaDB
+health check reads `/run/secrets/db_password` itself, because it runs in a new
+shell that does not see the entrypoint's variables. nginx gets no secret at all.
 
 ### Docker Network vs Host Network
 
@@ -190,27 +192,48 @@ cp srcs/.env.example srcs/.env
 
 | Variable | Description |
 |---|---|
-| `MARIADB_ROOT_PASSWORD` | password of the database `root` account |
 | `MARIADB_DATABASE` | name of the WordPress database |
-| `MARIADB_USER` / `MARIADB_PASSWORD` | application account used by WordPress |
+| `MARIADB_USER` | application account used by WordPress |
 | `MARIADB_HOST` | database host name, i.e. the service name `mariadb` |
 | `WP_URL` | site URL, without the scheme |
 | `WP_TITLE` | site title |
-| `WP_ADMIN_USER` / `WP_ADMIN_PASSWORD` / `WP_ADMIN_EMAIL` | administrator account — the login must not contain `admin` |
-| `WP_USER` / `WP_USER_PASSWORD` / `WP_USER_EMAIL` | second, non-administrator account |
+| `WP_ADMIN_USER` / `WP_ADMIN_EMAIL` | administrator account — the login must not contain `admin` |
+| `WP_USER` / `WP_USER_EMAIL` | second, non-administrator account |
 | `DOMAIN_NAME` | domain used for the TLS certificate |
 
 `WP_URL`, `DOMAIN_NAME`, the `server_name` in `srcs/requirements/nginx/conf/nginx.conf`
 and the `/etc/hosts` entry below must all match.
 
-**2. Resolve the domain locally.** The domain does not exist in the public DNS,
+No password goes in `.env`.
+
+**2. Create the secrets.** Passwords are stored in a `secrets/` folder at the
+root of the repository, which is ignored by Git:
+
+```
+secrets/
+├── db_root_password.txt   # MariaDB root password
+├── db_password.txt        # MariaDB password of MARIADB_USER
+└── credentials.txt        # WordPress passwords
+```
+
+The two `db_*` files contain only the password. `credentials.txt` contains one
+`KEY=value` per line:
+
+```
+WP_ADMIN_PASSWORD=...
+WP_USER_PASSWORD=...
+```
+
+See [DEV_DOC.md](DEV_DOC.md) for more details.
+
+**3. Resolve the domain locally.** The domain does not exist in the public DNS,
 so it has to be mapped to the loopback address on the machine running the stack:
 
 ```bash
-sudo sh -c 'echo "127.0.0.1 dufama.42.ch" >> /etc/hosts'
+sudo sh -c 'echo "127.0.0.1 dufama.42.fr" >> /etc/hosts'
 ```
 
-**3. Start the stack.**
+**4. Start the stack.**
 
 ```bash
 make
@@ -231,8 +254,8 @@ make re       # restart the stack
 make fclean   # remove containers, images, volumes and the data directories
 ```
 
-Once started, the site is available at **https://dufama.42.ch** and the
-administration panel at **https://dufama.42.ch/wp-admin**.
+Once started, the site is available at **https://dufama.42.fr** and the
+administration panel at **https://dufama.42.fr/wp-admin**.
 
 The browser will warn that the connection is not private: the certificate is
 self-signed, so no certificate authority vouches for it. The connection is
@@ -270,25 +293,14 @@ Only `make fclean` erases the data.
 
 ### Use of AI
 
-An AI assistant (Claude) was used throughout the project, in two ways.
+An AI assistant (Claude) was used in two ways.
 
-**As a tutor, which was the main use.** It explained error messages and the
-mechanisms behind them rather than only giving solutions: why `mariadbd
---bootstrap` implies `--skip-grant-tables` and returns error 1290, why
-`mariadb-admin ping` exits 0 even when access is denied, why php-fpm listens on
-a Unix socket by default, how name resolution goes through `/etc/hosts` before
-DNS, and why a self-signed certificate provides real encryption but no verified
-identity. The comparison sections of this README were written from those
-discussions.
+**To learn the configuration.** It was used as a tutor to understand how to
+configure each service and why things failed: error messages, MariaDB
+bootstrap mode, php-fpm listening on TCP, Docker secrets, volumes. All the
+Dockerfiles, scripts, configuration files and the Makefile were written by hand.
+It also reviewed some files and pointed out mistakes, which were then fixed by
+hand.
 
-**As a drafting aid for configuration files.** It proposed initial versions of
-the WordPress Dockerfile, of the three entrypoint scripts, of `www.conf` and of
-the nginx configuration, together with an explanation of each directive. Those
-drafts were retyped, adapted and debugged by hand: the typos, the shell quoting
-mistakes, the invalid nginx directives and the Makefile separator errors they
-contained were found and fixed during the actual runs, which is where most of
-the learning happened. It also reviewed the finished files and pointed out
-remaining issues, such as an unreachable nginx `location` block placed after a
-more general regular expression.
-
-No AI-generated content was used without being read, understood and tested.
+**For the documentation.** It helped write this README, `USER_DOC.md` and
+`DEV_DOC.md`. The content was read and checked against the project.

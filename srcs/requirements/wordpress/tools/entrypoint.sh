@@ -2,6 +2,10 @@
 
 set -e
 
+MARIADB_PASSWORD=$(cat /run/secrets/db_password)
+WP_ADMIN_PASSWORD=$(grep ^WP_ADMIN_PASSWORD= /run/secrets/credentials | cut -d= -f2-)
+WP_USER_PASSWORD=$(grep ^WP_USER_PASSWORD= /run/secrets/credentials | cut -d= -f2-)
+
 : "${MARIADB_HOST:?MARIADB_HOST manquante}"
 : "${MARIADB_DATABASE:?MARIADB_DATABASE manquante}"
 : "${MARIADB_USER:?MARIADB_USER manquante}"

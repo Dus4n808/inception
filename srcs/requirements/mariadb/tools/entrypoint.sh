@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+MARIADB_ROOT_PASSWORD=$(cat /run/secrets/db_root_password)
+MARIADB_PASSWORD=$(cat /run/secrets/db_password)
 : "${MARIADB_ROOT_PASSWORD:?MARIADB_ROOT_PASSWORD manquante}"
 : "${MARIADB_DATABASE:?MARIADB_DATABASE manquante}"
 : "${MARIADB_USER:?MARIADB_USER manquante}"
